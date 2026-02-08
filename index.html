@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Rebalance Bot — Multi Portfolio (локальный API)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root{
+      --bg:#0b0f14; --card:#0f1720; --muted:#9aa4bf; --text:#e6eef3;
+      --accent:#4f7bff; --accent-2:#2dd4bf; --accent-3:#ffb86b; --radius:12px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Arial,sans-serif;background:var(--bg);color:var(--text)}
+    .container{max-width:1200px;margin:28px auto;padding:18px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    .brand{display:flex;gap:12px;align-items:center}
+    .logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#7cc0ff);display:flex;align-items:center;justify-content:center;font-weight:700;color:#071029}
+    h1{font-size:18px;margin:0}
+    .small{font-size:13px;color:var(--muted)}
+    .grid{display:grid;grid-template-columns:1fr 360px;gap:18px;align-items:start}
+    .card{background:var(--card);border-radius:var(--radius);padding:16px;border:1px solid rgba(255,255,255,0.03);box-shadow:0 6px 18px rgba(0,0,0,0.5)}
+    .left{display:grid;grid-template-rows:auto auto auto;gap:18px}
+    .portfolio{display:flex;gap:18px;align-items:stretch}
+    .panel-main{flex:1;display:flex;flex-direction:column;gap:12px}
+    .metrics{display:flex;gap:12px;flex-wrap:wrap}
+    .metric{flex:1;padding:12px;border-radius:10px;background:rgba(255,255,255,0.01);min-width:120px}
+    .metric .label{color:var(--muted);font-size:12px}
+    .metric .value{font-weight:700;font-size:18px;margin-top:6px}
+    .donut-card{width:220px;min-width:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
+    .donut-legend{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+    .legend-item{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted)}
+    .dot{width:12px;height:12px;border-radius:3px}
+    .controls{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap}
+    button{padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--text);cursor:pointer}
+    button.primary{background:linear-gradient(90deg,var(--accent),#6aa3ff);color:#071029;font-weight:600}
+    .bar{height:12px;background:rgba(255,255,255,0.03);border-radius:8px;overflow:hidden;margin-top:8px}
+    .bar-inner{height:100%;background:linear-gradient(90deg,var(--accent),#58a6ff);width:0%;transition:width .25s ease}
+    .logs{height:160px;overflow:auto;padding:10px;border-radius:8px;background:rgba(255,255,255,0.02);font-size:13px;white-space:pre-line}
+    .connect .field{margin-bottom:10px}
+    input[type="text"], input[type="password"], select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--text)}
+    .right .stat{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed rgba(255,255,255,0.02)}
+    .right .stat:last-child{border-bottom:none}
+    .canvas-wrap-small { width:160px; height:160px; display:flex; align-items:center; justify-content:center; }
+    canvas#shareDonut { width:160px !important; height:160px !important; display:block; }
+    .canvas-fixed { width:100%; height:220px; display:block; }
+    canvas#totalChart, canvas#stackChart { width:100% !important; height:220px !important; display:block; }
+    @media (max-width:980px){
+      .grid{grid-template-columns:1fr;}
+      .portfolio{flex-direction:column}
+      .canvas-fixed{height:200px}
+    }
+    .mono{font-family: ui-monospace, Menlo, Consolas, monospace}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="logo">RB</div>
+        <div>
+          <h1>Rebalance Bot — Multi Portfolio</h1>
+          <div class="small">Автоматический ребаланс (локальный API)</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center">
+        <div class="small">Status: <strong id="statusText">stopped</strong></div>
+        <div class="small">Mode: <strong id="modeText">—</strong></div>
+        <button id="btnExport" class="primary">Экспорт CSV</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="left">
+        <!-- Портфель -->
+        <div class="card" id="portfolioCard">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div>
+              <div class="small">Портфель</div>
+              <div style="font-weight:700" id="portfolioTitle">—</div>
+            </div>
+            <div class="small">Обновлено: <span id="lastUpdate">—</span></div>
+          </div>
+
+          <div class="portfolio">
+            <div class="panel-main">
+              <div class="metrics">
+                <div class="metric">
+                  <div class="label">Цена BTC</div>
+                  <div class="value mono" id="priceBtc">—</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Цена ETH</div>
+                  <div class="value mono" id="priceEth">—</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Баланс BTC</div>
+                  <div class="value mono" id="balBtc">—</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Баланс ETH</div>
+                  <div class="value mono" id="balEth">—</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Баланс USDT</div>
+                  <div class="value mono" id="balUsdt">—</div>
+                </div>
+              </div>
+
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+                <div>
+                  <div class="small">Итого портфель</div>
+                  <div class="value mono" id="valTotal">—</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="small">ROI (от старта)</div>
+                  <div class="value mono" id="roi">—</div>
+                </div>
+              </div>
+
+              <div class="bar"><div id="barBtc" class="bar-inner"></div></div>
+              <div class="small" style="margin-top:6px">Доля BTC в портфеле</div>
+
+              <div class="controls">
+                <button id="btnRebalance" class="primary">Ребаланс сейчас</button>
+                <button id="btnStop">Остановить авто</button>
+              </div>
+            </div>
+
+            <div class="donut-card card" style="padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:center">
+              <div class="canvas-wrap-small">
+                <canvas id="shareDonut" width="160" height="160"></canvas>
+              </div>
+              <div class="donut-legend">
+                <div class="legend-item"><div class="dot" style="background:var(--accent)"></div><div class="small">BTC <span id="legBtc">—</span></div></div>
+                <div class="legend-item"><div class="dot" style="background:var(--accent-3)"></div><div class="small">ETH <span id="legEth">—</span></div></div>
+                <div class="legend-item"><div class="dot" style="background:var(--accent-2)"></div><div class="small">USDT <span id="legUsdt">—</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Графики -->
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div>
+              <div class="small">Графики роста</div>
+              <div style="font-weight:700">Динамика портфеля</div>
+            </div>
+            <div class="small">В реальном времени</div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div>
+              <div class="small" style="margin-bottom:6px">Общая стоимость портфеля (USDT)</div>
+              <div class="canvas-fixed"><canvas id="totalChart" width="800" height="220"></canvas></div>
+            </div>
+
+            <div>
+              <div class="small" style="margin-bottom:6px">Количество BTC, ETH и USDT</div>
+              <div class="canvas-fixed"><canvas id="stackChart" width="800" height="220"></canvas></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Логи -->
+        <div class="card">
+          <div class="small" style="margin-bottom:8px">Логи</div>
+          <div id="logs" class="logs">Интерфейс готов. Авто‑обновление включено (каждую минуту).</div>
+        </div>
+      </div>
+
+      <aside class="right">
+        <!-- Подключение к бирже -->
+        <div class="card connect">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div>
+              <div class="small">Подключение</div>
+              <div style="font-weight:700">Биржевой API</div>
+            </div>
+            <div class="small">Ключи вводятся вручную</div>
+          </div>
+
+          <div class="field">
+            <label class="small">API Key (биржа)</label>
+            <input id="apiKey" type="text" value="PUT_YOUR_API_KEY_HERE" />
+          </div>
+          <div class="field">
+            <label class="small">API Secret (биржа)</label>
+            <input id="apiSecret" type="password" value="PUT_YOUR_API_SECRET_HERE" />
+          </div>
+
+          <div class="row" style="margin-top:10px">
+            <button id="btnConnect" class="primary">Подключить</button>
+            <button id="btnDisconnect">Отключить</button>
+          </div>
+
+          <div style="margin-top:14px">
+            <div class="small">Начальный депозит</div>
+            <div style="font-weight:700" id="initialDeposit">— USDT</div>
+          </div>
+
+          <hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);margin:12px 0">
+
+          <!-- Режим портфеля -->
+          <div style="margin-top:6px">
+            <div class="small">Режим портфеля</div>
+            <select id="portfolioSelect">
+              <option value="50_50">BTC/USDT 50/50</option>
+              <option value="btc_eth_usdt_30_40_30">BTC 30% / ETH 30% / USDT 40%</option>
+            </select>
+            <div class="row" style="margin-top:8px">
+              <button id="btnSetPortfolio" class="primary">Переключить портфель</button>
+              <button id="btnRefreshPreset">Обновить режим</button>
+            </div>
+          </div>
+
+          <hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);margin:12px 0">
+
+          <!-- Telegram конфиг -->
+          <div>
+            <div class="small" style="margin-bottom:8px">Telegram уведомления</div>
+
+            <div class="field">
+              <label class="small">Bot Token</label>
+              <input id="tgToken" type="text" placeholder="123456789:ABCDEF..." />
+            </div>
+
+            <div class="field">
+              <label class="small">Chat ID</label>
+              <input id="tgChat" type="text" placeholder="Например, 1467823964" />
+            </div>
+
+            <div class="field">
+              <label class="small">Включить уведомления</label>
+              <select id="tgNotify">
+                <option value="true">Да</option>
+                <option value="false">Нет</option>
+              </select>
+            </div>
+
+            <div class="row" style="margin-top:8px">
+              <button id="btnSaveTelegram" class="primary">Сохранить Telegram</button>
+              <button id="btnTestTelegram">Тестовое сообщение</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:12px"></div>
+
+        <!-- Статистика -->
+        <div class="card">
+          <div class="stat"><div class="small">Всего ребалансов</div><div id="totalReb">0</div></div>
+          <div class="stat"><div class="small">Суммарная комиссия</div><div id="totalFee">0 USDT</div></div>
+          <div class="stat"><div class="small">ROI (от старта)</div><div id="roiPct">—</div></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+<script>
+/* Локальный API */
+const API_BASE = "http://localhost:8000";
+
+/* Helpers */
+const $ = id => document.getElementById(id);
+const logEl = $("logs");
+function appendLog(msg){ logEl.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + logEl.textContent; }
+
+/* Charts */
+let donutChart = null, totalChart = null, stackChart = null;
+
+function initChartsOnce() {
+  // DONUT
+  const donutCanvas = $("shareDonut");
+  if (donutCanvas) {
+    if (donutChart) try { donutChart.destroy(); } catch(e){}
+    donutCanvas.width = 160; donutCanvas.height = 160;
+    donutChart = new Chart(donutCanvas.getContext('2d'), {
+      type: 'doughnut',
+      data: { labels:['BTC','ETH','USDT'], datasets:[{ data:[50,10,40], backgroundColor:['#4f7bff','#ffb86b','#2dd4bf'] }] },
+      options: { responsive:false, maintainAspectRatio:false, cutout:'70%', plugins:{legend:{display:false}} }
+    });
+  }
+
+  // TOTAL
+  const totalCanvas = $("totalChart");
+  if (totalCanvas) {
+    if (totalChart) try { totalChart.destroy(); } catch(e){}
+    totalCanvas.width = 800; totalCanvas.height = 220;
+    totalChart = new Chart(totalCanvas.getContext('2d'), {
+      type: 'line',
+      data: { labels: [], datasets: [{ label:'Total (USDT)', data:[], borderColor:'#4f7bff', backgroundColor:'rgba(79,123,255,0.08)', fill:true, tension:0.25 }] },
+      options: { responsive:false, maintainAspectRatio:false, scales:{ x:{ ticks:{ color:'#9aa4bf' } }, y:{ ticks:{ color:'#9aa4bf' } } }, plugins:{legend:{display:false}} }
+    });
+  }
+
+  // STACK
+  const stackCanvas = $("stackChart");
+  if (stackCanvas) {
+    if (stackChart) try { stackChart.destroy(); } catch(e){}
+    stackCanvas.width = 800; stackCanvas.height = 220;
+    stackChart = new Chart(stackCanvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          { label:'BTC (qty)', data:[], borderColor:'#4f7bff', backgroundColor:'rgba(79,123,255,0.12)', yAxisID:'y1', fill:false, tension:0.25 },
+          { label:'ETH (qty)', data:[], borderColor:'#ffb86b', backgroundColor:'rgba(255,184,107,0.12)', yAxisID:'y1', fill:false, tension:0.25 },
+          { label:'USDT (amount)', data:[], borderColor:'#2dd4bf', backgroundColor:'rgba(45,212,191,0.12)', yAxisID:'y2', fill:true, tension:0.25 }
+        ]
+      },
+      options: {
+        responsive:false, maintainAspectRatio:false,
+        scales: {
+          x:{ ticks:{ color:'#9aa4bf' } },
+          y1:{ type:'linear', position:'left', ticks:{ color:'#9aa4bf' }, title:{ display:true, text:'Qty', color:'#9aa4bf' } },
+          y2:{ type:'linear', position:'right', ticks:{ color:'#9aa4bf' }, title:{ display:true, text:'USDT', color:'#9aa4bf' }, grid:{ drawOnChartArea:false } }
+        },
+        plugins:{ legend:{ labels:{ color:'#9aa4bf' } } }
+      }
+    });
+  }
+}
+
+/* API wrapper */
+async function api(path, method='GET', body=null){
+  const url = API_BASE + path;
+  const opts = { method, headers:{'Content-Type':'application/json'} };
+  if(body) opts.body = JSON.stringify(body);
+  try {
+    const res = await fetch(url, opts);
+    if(!res.ok){
+      const txt = await res.text();
+      appendLog(`API ${path} error ${res.status}: ${txt}`);
+      return null;
+    }
+    return await res.json();
+  } catch(e){
+    appendLog('Network error: ' + e);
+    return null;
+  }
+}
+
+/* UI actions: Биржа */
+async function connect(){
+  const api_key = $("apiKey").value.trim();
+  const api_secret = $("apiSecret").value.trim();
+  if(!api_key || !api_secret){ appendLog('Введите API ключи биржи'); return; }
+  appendLog('Подключение к бирже...');
+  const res = await api('/api/connect','POST',{ api_key, api_secret });
+  if(res && res.status === 'ok'){
+    appendLog('Подключено к бирже');
+    $("statusText").textContent = 'connected';
+    $("initialDeposit").textContent = (res.initial_deposit ?? '—') + ' USDT';
+    await refresh();
+  } else {
+    appendLog('Ошибка подключения');
+  }
+}
+
+function disconnect(){
+  $("statusText").textContent = 'stopped';
+  appendLog('Отключено локально (UI).');
+}
+
+async function manualRebalance(){
+  appendLog('Ручной ребаланс...');
+  const res = await api('/api/start','POST', {});
+  if(res) appendLog('Ребаланс: ' + (res.status || 'ok') + (res.message ? ' — ' + res.message : ''));
+  else appendLog('Ребаланс не выполнен');
+  await refresh();
+}
+
+async function stopAuto(){
+  const res = await api('/api/stop','POST', {});
+  if(res) appendLog('Авто-режим остановлен');
+  else appendLog('Не удалось остановить авто-режим');
+  await refresh();
+}
+
+function exportCsv(){
+  appendLog('Экспорт CSV...');
+  const a = document.createElement('a');
+  a.href = API_BASE + '/api/export';
+  a.download = 'rebalance_export.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+/* Portfolio switching */
+async function setPortfolio(){
+  const sel = $("portfolioSelect");
+  const mode = sel ? sel.value : null;
+  if(!mode){ appendLog('Выберите режим портфеля'); return; }
+  appendLog('Переключение портфеля: ' + mode);
+  const res = await api('/api/portfolio','POST',{ mode });
+  if(res && res.status === 'ok'){
+    appendLog('Портфель переключён: ' + mode);
+    $("modeText").textContent = mode;
+    await refresh();
+  } else {
+    appendLog('Ошибка переключения портфеля');
+  }
+}
+
+async function refreshPreset(){
+  appendLog('Обновление режима с сервера...');
+  await refresh();
+}
+
+/* Telegram config */
+async function saveTelegram(){
+  const token = $("tgToken").value.trim();
+  const chat = $("tgChat").value.trim();
+  const notifyVal = $("tgNotify").value;
+  const telegram_notify = (notifyVal === "true");
+
+  if(!token || !chat){
+    appendLog("Введите Bot Token и Chat ID");
+    return;
+  }
+
+  appendLog("Сохранение Telegram настроек...");
+  const res = await api('/api/config','POST',{
+    telegram_bot_token: token,
+    telegram_chat_id: chat,
+    telegram_notify
+  });
+  if(res && res.status === 'ok'){
+    appendLog("Telegram настройки сохранены");
+    await refresh();
+  } else {
+    appendLog("Не удалось сохранить Telegram настройки");
+  }
+}
+
+async function testTelegram(){
+  appendLog("Отправка тестового сообщения...");
+  const token = $("tgToken").value.trim();
+  const chat = $("tgChat").value.trim();
+  const notifyVal = $("tgNotify").value;
+  const telegram_notify = (notifyVal === "true");
+
+  const res = await api('/api/config','POST',{
+    telegram_bot_token: token,
+    telegram_chat_id: chat,
+    telegram_notify
+  });
+  if(res && res.status === 'ok'){
+    // call test endpoint to send message immediately
+    await api('/api/test_telegram','POST',{ text: 'Тестовое сообщение от интерфейса' });
+    appendLog("Проверьте Telegram: должно прийти тестовое сообщение");
+  } else {
+    appendLog("Тестовое сообщение не отправлено (обновление конфига не прошло)");
+  }
+}
+
+/* Refresh UI with server state, update charts */
+async function refresh(){
+  const s = await api('/api/status','GET');
+  if(!s){ appendLog('Не удалось получить статус'); return; }
+
+  $("statusText").textContent = s.state || 'stopped';
+  $("lastUpdate").textContent = new Date().toLocaleTimeString();
+
+  // Mode & preset title
+  const mode = s.portfolio_mode || '—';
+  $("modeText").textContent = mode;
+  const title = s.preset ? Object.entries(s.preset).map(([k,v])=>`${k}:${(v*100).toFixed(0)}%`).join(' / ') : mode;
+  $("portfolioTitle").textContent = title;
+
+  // Select mode in UI
+  const sel = $("portfolioSelect");
+  if(sel && mode){ try{ sel.value = mode; }catch(e){} }
+
+  // Prices & balances
+  const priceB = Number(s.prices?.['BTC/USDT'] || 0);
+  const priceE = Number(s.prices?.['ETH/USDT'] || 0);
+  $("priceBtc").textContent = priceB ? priceB.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+  $("priceEth").textContent = priceE ? priceE.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+
+  const balB = Number(s.balances?.BTC || 0);
+  const balE = Number(s.balances?.ETH || 0);
+  const balU = Number(s.balances?.USDT || 0);
+  $("balBtc").textContent = balB ? balB.toFixed(6) : '—';
+  $("balEth").textContent = balE ? balE.toFixed(6) : '—';
+  $("balUsdt").textContent = balU ? balU.toFixed(2) : '—';
+
+  // Values & weights
+  const valBy = s.val_by_asset || {};
+  const total = Number(s.val_total || (balB*priceB + balE*priceE + balU) || 0);
+  $("valTotal").textContent = total ? total.toFixed(2) : '—';
+  const vB = Number(valBy.BTC || 0);
+  const vE = Number(valBy.ETH || 0);
+  const vU = Number(valBy.USDT || 0);
+  const shareB = total > 0 ? (vB/total*100) : 0;
+  const shareE = total > 0 ? (vE/total*100) : 0;
+  const shareU = total > 0 ? (vU/total*100) : 0;
+
+  if (!donutChart) initChartsOnce();
+  donutChart.data.datasets[0].data = [shareB, shareE, shareU];
+  donutChart.update();
+  $("legBtc").textContent = shareB ? shareB.toFixed(2) + '%' : '—';
+  $("legEth").textContent = shareE ? shareE.toFixed(2) + '%' : '—';
+  $("legUsdt").textContent = shareU ? shareU.toFixed(2) + '%' : '—';
+  $("barBtc").style.width = total>0 ? shareB.toFixed(2) + '%' : '0%';
+
+  // Analytics
+  const roi = Number(s.analytics?.roi_pct || 0);
+  $("roi").textContent = isFinite(roi) ? roi.toFixed(2) + '%' : '—';
+  $("roiPct").textContent = isFinite(roi) ? roi.toFixed(2) + '%' : '—';
+  $("totalReb").textContent = s.analytics?.total_rebalances ?? 0;
+  $("totalFee").textContent = (s.analytics?.total_fee ?? 0).toFixed(2) + ' USDT';
+  $("initialDeposit").textContent = (s.config?.initial_deposit ?? '—') + ' USDT';
+
+  // Populate Telegram UI from server config if present
+  const cfg = s.config || {};
+  if (cfg.telegram_bot_token) $("tgToken").value = cfg.telegram_bot_token;
+  if (cfg.telegram_chat_id) $("tgChat").value = cfg.telegram_chat_id;
+  $("tgNotify").value = (cfg.telegram_notify ? "true" : "false");
+
+  // Charts updates
+  const now = new Date().toLocaleTimeString();
+  if (!totalChart) initChartsOnce();
+  totalChart.data.labels.push(now);
+  totalChart.data.datasets[0].data.push(total || 0);
+  if (totalChart.data.labels.length > 240) { totalChart.data.labels.shift(); totalChart.data.datasets[0].data.shift(); }
+  totalChart.update();
+
+  if (!stackChart) initChartsOnce();
+  stackChart.data.labels.push(now);
+  stackChart.data.datasets[0].data.push(balB || 0);
+  stackChart.data.datasets[1].data.push(balE || 0);
+  stackChart.data.datasets[2].data.push(balU || 0);
+  if (stackChart.data.labels.length > 240) {
+    stackChart.data.labels.shift();
+    stackChart.data.datasets.forEach(ds => ds.data.shift());
+  }
+  stackChart.update();
+
+  appendLog('Статус обновлён');
+}
+
+/* Bind events and init */
+document.addEventListener('DOMContentLoaded', () => {
+  initChartsOnce();
+  appendLog('Интерфейс готов. Авто‑обновление включено (каждую минуту).');
+
+  const btnConnect = document.getElementById('btnConnect');
+  const btnDisconnect = document.getElementById('btnDisconnect');
+  const btnRebalance = document.getElementById('btnRebalance');
+  const btnStop = document.getElementById('btnStop');
+  const btnExport = document.getElementById('btnExport');
+  const btnSetPortfolio = document.getElementById('btnSetPortfolio');
+  const btnRefreshPreset = document.getElementById('btnRefreshPreset');
+  const btnSaveTelegram = document.getElementById('btnSaveTelegram');
+  const btnTestTelegram = document.getElementById('btnTestTelegram');
+
+  if (btnConnect) btnConnect.addEventListener('click', connect);
+  if (btnDisconnect) btnDisconnect.addEventListener('click', disconnect);
+  if (btnRebalance) btnRebalance.addEventListener('click', manualRebalance);
+  if (btnStop) btnStop.addEventListener('click', stopAuto);
+  if (btnExport) btnExport.addEventListener('click', exportCsv);
+  if (btnSetPortfolio) btnSetPortfolio.addEventListener('click', setPortfolio);
+  if (btnRefreshPreset) btnRefreshPreset.addEventListener('click', refreshPreset);
+  if (btnSaveTelegram) btnSaveTelegram.addEventListener('click', saveTelegram);
+  if (btnTestTelegram) btnTestTelegram.addEventListener('click', testTelegram);
+
+  // Первичное обновление и авто-обновление каждую минуту
+  refresh();
+  setInterval(() => { refresh(); }, 60 * 1000);
+});
+</script>
+</body>
+</html>
