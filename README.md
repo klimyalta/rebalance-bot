@@ -34,11 +34,11 @@
 - Графики: Chart.js (линейные + donut)  
 - Уведомления: Telegram Bot API  
 
-## Как запустить
+## Как запустить локально
 1. Склонируй репозиторий  
 2. Установи зависимости: `pip install -r requirements.txt` (если есть)  
-3. Запусти backend (если есть): `python main.py`  
-4. Открой `index.html` в браузере  
+3. Запусти server.py  
+4. Открой index.html через командную строку
 5. Введи API-ключи Bybit и Telegram  
 
 
